@@ -1,22 +1,27 @@
-from django.shortcuts import render, redirect, get_object_or_404
+from http import HTTPStatus
+
 from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse
+from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
-from .models import Project
+
+from team_finder.services import get_paginated_page
 from .forms import ProjectForm
+from .models import Project
+
 
 def project_list(request):
     # Достаем из базы все проекты и сортируем от новых к старым 
-    projects = Project.objects.all().order_by('-created_at')
+    projects = Project.objects.select_related('owner').prefetch_related('participants').order_by('-created_at')
     
     # Отдаем htm;l шаблон и передаем в него список проектов
-    return render(request, 'projects/project_list.html', {'projects': projects})
+    page_obj = get_paginated_page(request, projects)
+    return render(request, 'projects/project_list.html', {'projects': page_obj})
 
 @login_required
 def create_project(request):
-    if request.method == 'POST':
-        form = ProjectForm(request.POST)
-        if form.is_valid():
+    form = ProjectForm(request.POST or None)
+    if form.is_valid():
             # Сохраняем, но пока не отправляем в базу
             project = form.save(commit=False)
             # Автором назначаем текущего залогиненного пользователя
@@ -27,9 +32,6 @@ def create_project(request):
             
             # Перенаправляем на страницу созданного проекта
             return redirect('projects:project_details', pk=project.pk)
-    else:
-        form = ProjectForm()
-        
     return render(request, 'projects/create-project.html', {'form': form, 'is_edit': False})
 
 def project_details(request, pk):
@@ -42,40 +44,37 @@ def project_details(request, pk):
 def complete_project(request, pk):
     project = get_object_or_404(Project, pk=pk)
     # Проверяем, что нажал fdnjh и проект еще открыт
-    if project.owner == request.user and project.status == 'open':
-        project.status = 'closed'
+    if project.owner == request.user and project.status == Project.STATUS_OPEN:
+        project.status = Project.STATUS_CLOSED
         project.save()
         return JsonResponse({"status": "ok", "project_status": "closed"})
-    return JsonResponse({"status": "error"}, status=403)
+    return JsonResponse({"status": "error"}, status=HTTPStatus.FORBIDDEN)
 
 @login_required
 def edit_project(request, pk):
     project = get_object_or_404(Project, pk=pk)
-    if request.method == 'POST':
         # Передаем существующий проект в форму, чтобы обновить его, а не создать новый
-        form = ProjectForm(request.POST, instance=project)
-        if form.is_valid():
-            form.save()
-            return redirect('projects:project_details', pk=project.pk)
-    else:
-        form = ProjectForm(instance=project)
-    
+    form = ProjectForm(request.POST or None, instance=project)
+    if form.is_valid():
+        form.save()
+        return redirect('projects:project_details', pk=project.pk)
     # is_edit=True меняет текст кнопки с опубликовать на сохранить
     return render(request, 'projects/create-project.html', {'form': form, 'is_edit': True})
 
 @login_required
 def favorite_projects(request):
     # Достаем только те проекты, которые пользователь добавил в избранное
-    projects = request.user.favorites.all().order_by('-created_at')
-    return render(request, 'projects/favorite_projects.html', {'projects': projects})
+    projects = request.user.favorites.select_related('owner').prefetch_related('participants').order_by('-created_at')
+    page_obj = get_paginated_page(request, projects)
+    return render(request, 'projects/favorite_projects.html', {'projects': page_obj})
 
 @login_required
 @require_POST
 def toggle_participate(request, pk):
     project = get_object_or_404(Project, pk=pk)
-    if request.user in project.participants.all():
+    is_participant = False
+    if project.participants.filter(id=request.user.id).exists():
         project.participants.remove(request.user)
-        is_participant = False
     else:
         project.participants.add(request.user)
         is_participant = True
@@ -85,9 +84,9 @@ def toggle_participate(request, pk):
 @require_POST
 def toggle_favorite(request, pk):
     project = get_object_or_404(Project, pk=pk)
-    if project in request.user.favorites.all():
+    favorited = False
+    if request.user.favorites.filter(id=project.id).exists():
         request.user.favorites.remove(project)
-        favorited = False
     else:
         request.user.favorites.add(project)
         favorited = True

@@ -1,7 +1,11 @@
+import re
+
 from django import forms
 from django.contrib.auth import authenticate
+
+from team_finder.mixins import GitHubUrlValidatorMixin
 from .models import User
-import re
+
 
 class RegisterForm(forms.ModelForm):
     password = forms.CharField(widget=forms.PasswordInput(), label="Пароль")
@@ -17,6 +21,7 @@ class RegisterForm(forms.ModelForm):
         if commit:
             user.save()
         return user
+
 
 class LoginForm(forms.Form):
     email = forms.EmailField(label="Email")
@@ -34,7 +39,8 @@ class LoginForm(forms.Form):
             cleaned_data['user'] = user
         return cleaned_data
 
-class ProfileEditForm(forms.ModelForm):
+
+class ProfileEditForm(GitHubUrlValidatorMixin, forms.ModelForm):
     class Meta:
         model = User
         fields = ['name', 'surname', 'avatar', 'about', 'phone', 'github_url']
@@ -50,11 +56,6 @@ class ProfileEditForm(forms.ModelForm):
             raise forms.ValidationError("Этот номер уже используется другим пользователем")
         return phone
 
-    def clean_github_url(self):
-        url = self.cleaned_data.get('github_url')
-        if url and 'github.com' not in url.lower():
-            raise forms.ValidationError("Ссылка должна вести на GitHub")
-        return url
 
 class ChangePasswordForm(forms.Form):
     old_password = forms.CharField(widget=forms.PasswordInput(), label="Старый пароль")
