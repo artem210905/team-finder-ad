@@ -12,21 +12,23 @@ def register_view(request):
     if form.is_valid():
         user = form.save()
         login(request, user) # Сразу авторизуем после регистрации
-        return redirect('/projects/list/')
+        return redirect('projects:project_list')
     return render(request, 'users/register.html', {'form': form})
+
 
 def login_view(request):
     form = LoginForm(request.POST or None)
     if form.is_valid():
         user = form.cleaned_data['user']
         login(request, user)
-        return redirect('/projects/list/')
+        return redirect('projects:project_list')
     return render(request, 'users/login.html', {'form': form})
 
 
 def logout_view(request):
     logout(request)
-    return redirect('/projects/list/')
+    return redirect('projects:project_list')
+
 
 def user_list(request):
     users = User.objects.all().order_by('id')
@@ -51,9 +53,11 @@ def user_list(request):
         'active_filter': active_filter
     })
 
+
 def user_details(request, pk):
     user_obj = get_object_or_404(User, pk=pk)
     return render(request, 'users/user-details.html', {'user': user_obj})
+
 
 @login_required
 def edit_profile(request):
@@ -62,6 +66,7 @@ def edit_profile(request):
         form.save()
         return redirect('users:user_details', pk=request.user.pk)
     return render(request, 'users/edit_profile.html', {'form': form})
+
 
 @login_required
 def change_password(request):
